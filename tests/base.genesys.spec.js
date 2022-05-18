@@ -28,6 +28,7 @@ describe('genesys page tests in iframe mode', function () {
   beforeAll(async function () {
     // prepare mocks
     genesysResponses.userResponse.organization.id = config.test_env.organizationId;
+    genesysResponses.userResponseWithAuth.organization.id = config.test_env.organizationId;
     genesysResponses.channels.connectUri = `ws://localhost:${SOCKET_SERVER_PORT}/`;
     genesysResponses.channels.id = channelId;
     genesysResponses.getChannels.entities[0].connectUri = `ws://localhost:${SOCKET_SERVER_PORT}/`;
@@ -67,7 +68,7 @@ describe('genesys page tests in iframe mode', function () {
     */
 
     // start 80 port proxy server
-    await mockProxy.startHttpProxyServer(PROXY_SERVER_PORT);
+    // await mockProxy.startHttpProxyServer(PROXY_SERVER_PORT);
     // start 443 port proxy server
     await mockProxy.startSSlProxyServer(PROXY_SERVER_PORT);
     // start https server for mock responses
@@ -206,7 +207,30 @@ describe('genesys page tests in popup mode', function () {
   let visitorUrl;
 
   beforeAll(async function () {
+    // await mockProxy.startHttpProxyServer(PROXY_SERVER_PORT);
+    await mockProxy.startSSlProxyServer(PROXY_SERVER_PORT);
+    await mockProxy.startHttpServer(PROXY_SERVER_PORT);
+    await mockProxy.startSocketServer(SOCKET_SERVER_PORT);
+    await veUtil.authenticate();
+    await veUtil.setBrokerageProfile({
+      branding:
+         {
+           visitorShowPrecall: false,
+           enablePrecallWorkflow: false,
+           inviteUrl: config.test_env.baseURL,
+           redirectUrl: REDIRECT_URL
+         },
+      newTheme: false,
+      isPopup: true,
+      smsInvitation: {
+        enabled: true
+      }
+    });
+  });
+
+  beforeEach(async function () {
     genesysResponses.userResponse.organization.id = config.test_env.organizationId;
+    genesysResponses.userResponseWithAuth.organization.id = config.test_env.organizationId;
     genesysResponses.channels.connectUri = `ws://localhost:${SOCKET_SERVER_PORT}/`;
     genesysResponses.channels.id = channelId;
     genesysResponses.getChannels.entities[0].connectUri = `ws://localhost:${SOCKET_SERVER_PORT}/`;
@@ -229,25 +253,6 @@ describe('genesys page tests in popup mode', function () {
     mockProxy.mockIt({ path: '/api/v2/notifications/channels/' + channelId + '/subscriptions', method: 'PUT' }, genesysResponses.subscriptions[0]);
     mockProxy.mockIt({ path: '/api/v2/conversations', method: 'GET' }, genesysResponses.conversations[0]);
 
-    await mockProxy.startHttpProxyServer(PROXY_SERVER_PORT);
-    await mockProxy.startSSlProxyServer(PROXY_SERVER_PORT);
-    await mockProxy.startHttpServer(PROXY_SERVER_PORT);
-    await mockProxy.startSocketServer(SOCKET_SERVER_PORT);
-    await veUtil.authenticate();
-    await veUtil.setBrokerageProfile({
-      branding:
-         {
-           visitorShowPrecall: false,
-           enablePrecallWorkflow: false,
-           inviteUrl: config.test_env.baseURL,
-           redirectUrl: REDIRECT_URL
-         },
-      newTheme: false,
-      isPopup: true
-    });
-  });
-
-  beforeEach(async function () {
     VISITOR_SESSION_ID = veUtil.getUUID();
     visitorUrl = visitor.constructUrlC2V(config.test_env, VISITOR_SESSION_ID);
   });
@@ -263,6 +268,7 @@ describe('genesys page tests in popup mode', function () {
     }
     // close remaining pages
     Genesys.closeAllPages();
+    mockProxy.cleanMocks();
   });
 
   afterAll(async function () {
@@ -435,5 +441,105 @@ describe('genesys page tests in popup mode', function () {
     expect(agent.switchTo())
       .toThrow('NoSuchWindowError')
       .catch(function (e) { log.debug('handle exception to avoid crash', e); });
+  });
+
+  // run this test standalone by this command:
+  // NODE_ENV=test npx protractor --specs='tests/base.genesys.spec.js' --grep="inbound: accept incoming voice"
+  it('inbound: accept incoming voice, invite via sms, pickup from agent', async function () {
+    genesysResponses.messages.entities[0].body = JSON.stringify({ interactionId: VISITOR_SESSION_ID });
+    mockProxy.mockIt({ path: '/api/v2/conversations/calls', method: 'GET' }, genesysResponses.calls[0]);
+    mockProxy.mockIt({ path: '/api/v2/conversations/messages', method: 'POST' }, genesysResponses.conversationsMessages);
+    mockProxy.mockIt({ path: '/api/v2/conversations/CONVERSATION_ID', method: 'GET' }, genesysResponses.conversationsGet);
+    mockProxy.mockIt({ path: '/api/v2/conversations/messages/CONVERSATION_ID', method: 'PATCH' }, { toAddress: '+90' });
+    mockProxy.mockIt({ path: '/api/v2/conversations/messages/CONVERSATION_ID/communications/COMMUNICATION_ID/messages', method: 'POST' }, genesysResponses.communicationsMessages);
+
+    // construct genesys url by pak, env, clientId
+    const genesysUrl = genesys.constructUrl(config.test_env);
+    // open genesys page
+    await genesys.openAsNew(genesysUrl);
+    // click start video button
+    await genesys.authorized(accessToken);
+    // check is websocket conencted
+    await browser.sleep(1000);
+    await mockProxy.isConnected();
+    await browser.sleep(2000);
+    await mockProxy.sendSocketMessage(genesysResponses.incomingVoiceAccepted);
+    // check if sms button visible
+    await genesys.sendSmsAndInviteAvailable();
+    await genesys.sendSmsAndInvite.click();
+
+    // REST IS THE SAME AS OUTBOUND
+    await browser.sleep(1000);
+    // get generated visitor url from genesys page
+    visitorUrl = await genesys.getVisitorUrl();
+    // click start video session button to open agent popup
+    await genesys.StartVideoSessionAvailable();
+    // check if popup created
+    const windowsBeforePopup = await browser.getAllWindowHandles();
+    await genesys.acceptIncomingCallButton.click();
+    const agent = await genesys.popupCreated(windowsBeforePopup);
+
+    await agent.switchTo();
+    await agent.previewVideoStarted();
+
+    // open visitor page and join to the call
+    await visitor.openAsNew(visitorUrl);
+    expect(await visitor.shortUrlExpanded()).toBeTruthy();
+    expect(await visitor.inWaitingState(config.test_env)).toBeTruthy();
+    // verify  agent
+    await agent.switchTo();
+    expect(await agent.localVideoStarted()).toBeTruthy();
+    await agent.remoteVideoStarted();
+    await expect(agent.localvideo.getAttribute('readyState')).toEqual('4');
+
+    // switch to visitor and verify we have local and remote video
+    await visitor.switchTo();
+    await visitor.localVideoStarted();
+    expect(await visitor.localvideo.getAttribute('readyState')).toEqual('4');
+    await visitor.remoteVideoStarted();
+
+    // terminate session by agent red button
+    await agent.switchTo();
+    await agent.hangup.click();
+    await agent.confirm.click();
+
+    await visitor.switchTo();
+    expect(await visitor.redirectedTo(REDIRECT_URL)).toBeTruthy();
+    // except exception
+    expect(agent.switchTo())
+      .toThrow('NoSuchWindowError')
+      .catch(function (e) { log.debug('handle exception to avoid crash', e); });
+
+    // check if sms button is invisible
+    await genesys.sendSmsAndInviteInvisible();
+  });
+
+  // run this test standalone by this command:
+  // NODE_ENV=test npx protractor --specs='tests/base.genesys.spec.js' --grep="inbound: make a voice, terminate"
+  it('inbound: make a voice, terminate and wrap it up', async function () {
+    genesysResponses.messages.entities[0].body = JSON.stringify({ interactionId: VISITOR_SESSION_ID });
+    mockProxy.mockIt({ path: '/api/v2/conversations/calls', method: 'GET' }, genesysResponses.calls[0]);
+    mockProxy.mockIt({ path: '/api/v2/conversations/messages', method: 'POST' }, genesysResponses.conversationsMessages);
+    mockProxy.mockIt({ path: '/api/v2/conversations/CONVERSATION_ID', method: 'GET' }, genesysResponses.conversationsGet);
+    mockProxy.mockIt({ path: '/api/v2/conversations/messages/CONVERSATION_ID', method: 'PATCH' }, { toAddress: '+90' });
+    mockProxy.mockIt({ path: '/api/v2/conversations/messages/CONVERSATION_ID/communications/COMMUNICATION_ID/messages', method: 'POST' }, genesysResponses.communicationsMessages);
+
+    // construct genesys url by pak, env, clientId
+    const genesysUrl = genesys.constructUrl(config.test_env);
+    // open genesys page
+    await genesys.openAsNew(genesysUrl);
+    // click start video button
+    await genesys.authorized(accessToken);
+    // check is websocket conencted
+    await browser.sleep(1000);
+    await mockProxy.isConnected();
+    await browser.sleep(2000);
+    await mockProxy.sendSocketMessage(genesysResponses.incomingVoiceAccepted);
+    // check if sms button visible
+    await genesys.sendSmsAndInviteAvailable();
+    await mockProxy.sendSocketMessage(genesysResponses.incomingVoiceTerminated);
+    await genesys.sendSmsAndInviteAvailable();
+    await mockProxy.sendSocketMessage(genesysResponses.incomingVoiceWrapUp);
+    await genesys.sendSmsAndInviteInvisible();
   });
 });

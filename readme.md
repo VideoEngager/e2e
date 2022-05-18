@@ -104,3 +104,14 @@ Core tests are consist of 11 different scenarios. In summary, these are:
 9. Inbound call, agent page loads first
 10. Inbound call, visitor page loads first 
 11. Outbound call, end it from agent
+
+## Extra 
+
+### run spesific test case 
+You can run only one test case by running this command:
+
+`npx protractor --specs='tests/base.spec.js' --grep="outbound" `
+### open chrome in 'disabled ssl security' mode
+If you are a mac user you can open your chrome without ssl security:
+
+`open /Applications/Google\ Chrome\ Dev.app --args --args --user-data-dir="~/tmp" --disable-web-security --allow-running-insecure-content --ignore-certificate-errors`

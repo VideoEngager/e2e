@@ -84,6 +84,27 @@ const environments = {
     environment: 'https://api.mypurecloud.de',
     queue: 'Support',
     logLevel: 'warn'
+  },
+  production: {
+    pak: 'd41cdd4e-4806-cab7-2b5d-4c3eae2470a8',
+    externalId: 'videoEngager',
+    firstName: 'Mr',
+    lastName: 'Agent',
+    email: 'pureclouddemo@videoengager.com',
+    password: '123456',
+    userName: 't',
+    id: '123',
+    subject: 'subj',
+    hideChat: true,
+    hideInfo: true,
+    baseURL: 'https://videome.leadsecure.com',
+    organizationId: '42ef203c-4d40-44e5-8a6e-d978b52f678c',
+    deploymentId: '973f8326-c601-40c6-82ce-b87e6dafef1c',
+    clientId: 'SOME_ID',
+    tennantId: 'zwqqsB7k16V0YBpW',
+    environment: 'https://api.mypurecloud.com',
+    queue: 'TestQueue',
+    logLevel: 'warn'
   }
 };
 const env = process.env.NODE_ENV || 'test';

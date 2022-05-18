@@ -39,6 +39,13 @@ class Genesys extends Agent {
   }
 
   /**
+   * get sendSmsAndInvite btn as selemiunm object
+   */
+  get sendSmsAndInvite () {
+    return element(by.id('sendSmsAndInvite'));
+  }
+
+  /**
    * check if "Start Video Session" button is available which starts popup window
    * @returns promise
    */
@@ -60,6 +67,18 @@ class Genesys extends Agent {
    */
   async pickupAvailable () {
     return browser.wait(until.elementToBeClickable(element(by.id('acceptClickToVideoButton'))), global.TIMEOUT, 'acceptClickToVideoButton does not became available in ' + global.TIMEOUT + 's');
+  }
+
+  /**
+   * check if "send sms and Invite" button is available
+   * @returns promise
+   */
+  async sendSmsAndInviteAvailable () {
+    return browser.wait(until.elementToBeClickable(element(by.id('sendSmsAndInvite'))), global.TIMEOUT, 'sendSmsAndInvite does not became available in ' + global.TIMEOUT + 's');
+  }
+
+  async sendSmsAndInviteInvisible () {
+    return browser.wait(until.invisibilityOf(element(by.id('sendSmsAndInvite'))), global.TIMEOUT, 'sendSmsAndInvite does not became invisibile in ' + global.TIMEOUT + 's');
   }
 
   /**

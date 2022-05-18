@@ -135,7 +135,6 @@ class MockProxy {
               connection.sendUTF(JSON.stringify({ eventBody: { message: 'pong' }, topicName: 'channel.metadata' }));
               socketConnected = true;
             }
-            connection.close();
           });
         });
 
@@ -155,9 +154,13 @@ class MockProxy {
    * close websocket server
    */
   async closeSocketServer () {
+    if (connection) {
+      connection.close();
+    }
     if (socketServer) {
       socketServer.close();
     }
+    socketConnected = false;
   }
 
   /**
@@ -189,7 +192,19 @@ class MockProxy {
     return new Promise(function (resolve, reject) {
       try {
         httpServer = http.createServer(function (req, res) {
-          log.debug('REQUEST rcvd===> Method:' + req.method + ' PATH:' + req.url);
+          let rawData = '';
+          req.on('data', (chunk) => {
+            rawData += chunk;
+          });
+          req.on('end', () => {
+            try {
+              log.debug('REQUEST rcvd===> Method:' + req.method + ' PATH:' + req.url);
+              const parsedData = JSON.parse(rawData);
+              console.log('REQUEST body===> ', parsedData);
+            } catch (e) {
+              console.error(e.message);
+            }
+          });
 
           const mresp = mockObjects.find(function (element) {
             const rule = match(element.rule.path);
@@ -242,7 +257,7 @@ class MockProxy {
       const interval = setInterval(function () {
         if (socketConnected === true) {
           clearInterval(interval);
-          socketConnected = false;
+          // socketConnected = false;
           resolve();
           return;
         }
@@ -260,6 +275,14 @@ class MockProxy {
     this.closeSSlProxyServer();
     this.closeSocketServer();
     this.cleanMocks();
+  }
+
+  sendSocketMessage (socketMessage) {
+    if (socketConnected) {
+      return connection.sendUTF(JSON.stringify(socketMessage));
+    } else {
+      throw new Error('socket not connected.');
+    }
   }
 }
 
